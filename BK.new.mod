@@ -3,7 +3,6 @@ NEURON {
 	USEION k READ ek WRITE ik VALENCE 1
 	USEION cal2 READ cal2i VALENCE 2
 	RANGE gbar, minf, mtau
-        RANGE vhalf
         GLOBAL shift
         GLOBAL tau_factor
 
@@ -75,33 +74,43 @@ DERIVATIVE states {
         m' = (minf-m)/mtau
 }
 
-FUNCTION sig(x, fmax, xh, f0, k) {
-  sig = fmax / ( 1 + exp( (x - xh) / k ) ) + f0
+
+FUNCTION alpha(v, ca) { LOCAL alpha_max, k, vh
+    alpha_max = 0 + 5.46548878 / (1 + exp(-(log10(ca) + 1.61322084) / 0.24917329)) 
+    k = 8.263928565595934 + 1.2552204 / (1 + exp(-(log10(ca) + 1.61382309) / 0.03180212))  
+    vh = 52.094347461863926 - 69.4428835 / (1 + exp(-(log10(ca) + 1.70836237) / 0.0236872607))
+    alpha = alpha_max / (1 + exp(-(v - vh) / k))
 }
 
-FUNCTION alpha(v, k, B) {
-  alpha = exp((v - 30) / k) * B
+FUNCTION beta(v, ca) { LOCAL vh, k
+    vh = -51.449688490633456 + 0.17726174 * exp(-(log10(ca) - 4.07832681) / 1.02895756)
+    k = -24.653642743189497
+    
+    if (fabs((v - vh)/k) < 1e-5) {
+        beta = 1.0
+    } else {
+        beta = -1.0 / ( exp(-(v - vh) / k) - 1) * (v - vhalf) / k
+    }
+
 }
 
-FUNCTION beta(v, k, B) {
-  if (fabs((v - 30)/k) < 1e-5) {
-    beta = 1
+FUNCTION func_vhalf(cai) { LOCAL ca_conc_log
+  ca_conc_log = log10(cai) + 3
+  if (ca_conc_log <= -1) {
+    func_vhalf = 152.0
+  } else if (ca_conc_log >= 3) {
+    func_vhalf = -47.7
   } else {
-    beta = -1.0 / ( exp(-(v - 30) / k) - 1) * (v - 30) / k
+     func_vhalf = -49.925 * ca_conc_log + 102.075
   }
-  beta = beta * B
 }
 
 
-PROCEDURE rates(v(mV), cai (mM)) { LOCAL ca_conc_log, mm, qq, x0, x1, y0, y1, Ba, Bb, a, b, vsh
+PROCEDURE rates(v(mV), cai (mM)) { LOCAL a, b, vsh
               vsh = v + shift
                                    
-              ca_conc_log = log10(cai) + 3.0            
-
-              Ba = 10 ^ sig(ca_conc_log, 2.53905005,  0.78384945, -1.27772552,  2.04819518)
-              Bb = 10 ^ sig(ca_conc_log, 4.07686975,  0.87144064, -3.34336997,  -0.2950530)
-              a  = alpha(vsh, -57.82912341, Ba)
-              b  = beta(vsh, 26.38506155, Bb)
+              a  = alpha(vsh, cai)
+              b  = beta(vsh, cai)
                                    
               : definition of tau from the literature                              
               mtau = tau_factor / (a + b)
@@ -112,25 +121,14 @@ PROCEDURE rates(v(mV), cai (mM)) { LOCAL ca_conc_log, mm, qq, x0, x1, y0, y1, Ba
                                    
               mtau = mtau / q
                                    
-
-              : Bold line in Figure 2D
-              if (ca_conc_log < -0.9) {
-                vhalf = 152.0
-              } else if (ca_conc_log >= 3.2) {
-                vhalf = -47.7
-              } else {
-                 y0 = 152.0
-                 y1 = -47.7
-                 x0 = -0.9
-                 x1 = 3.2
-                 mm = (y1 - y0) / (x1 - x0)
-                 qq = - x0 * (y1 - y0) / (x1 - x0) + y0 
-                 vhalf = mm * ca_conc_log + qq
-              }
-              
-              minf = 1 / (1 + exp(-(vsh - vhalf)/slope))
+              minf = 1 / (1 + exp(-(vsh - func_vhalf(cai))/slope))
 }
 
 
  
 UNITSON 
+
+
+
+
+
